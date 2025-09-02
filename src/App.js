@@ -25,7 +25,6 @@ const safeParse = (val) => {
 
 const toUpperIfString = (v) => (typeof v === "string" ? v.toUpperCase() : v);
 
-// normalize numbers like "1,065.10 " → 1065.1
 const num = (v) => {
   if (v === null || v === undefined) return 0;
   if (typeof v === "number") return isNaN(v) ? 0 : v;
@@ -34,7 +33,6 @@ const num = (v) => {
   return isNaN(n) ? 0 : n;
 };
 
-// build row arrays of equal length and drop trailing empty/null rows
 const normalizeRows = (inv) => {
   const productname = safeParse(inv.productname);
   const description = safeParse(inv.description);
@@ -98,7 +96,7 @@ export default function App() {
   }, []);
 
   /** ---- PDF ---- */
-  const generatePDFFile = (invoiceLike, fileName) => {
+  const generatePDFBlob = (invoiceLike) => {
     const rows = normalizeRows(invoiceLike);
 
     const doc = new jsPDF();
@@ -139,9 +137,7 @@ export default function App() {
     const finalY = doc.lastAutoTable?.finalY ?? 120;
     doc.text("Authorized Signature: ____________________", 20, finalY + 20);
 
-    // 👉 convert Blob → File (safe for Supabase upload)
-    const blob = doc.output("blob");
-    return new File([blob], fileName, { type: "application/pdf" });
+    return doc.output("blob");
   };
 
   /** ---- Approve ---- */
@@ -152,6 +148,7 @@ export default function App() {
       const amounts = rows.map((r) => num(r.quantity) * num(r.rate));
       const total = amounts.reduce((a, b) => a + b, 0);
 
+      // ✅ Update Supabase status only (no storage upload)
       const { error: updateError } = await supabase
         .from("backend")
         .update({
@@ -162,40 +159,36 @@ export default function App() {
         .eq("phonenumber", invoice.phonenumber);
       if (updateError) throw updateError;
 
-      const fileName = `invoice_${invoice.phonenumber}.pdf`;
-      const pdfFile = generatePDFFile({ ...invoice, status: "APPROVED" }, fileName);
+      // ✅ Generate PDF blob and create URL
+      const pdfBlob = generatePDFBlob({
+        ...invoice,
+        status: "APPROVED",
+      });
+      const pdfUrl = URL.createObjectURL(pdfBlob); // blob: URL (only works in browser)
 
-      const { error: uploadError } = await supabase.storage
-        .from("invoices")
-        .upload(fileName, pdfFile, {
-          cacheControl: "3600",
-          upsert: true,
-        });
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from("invoices")
-        .getPublicUrl(fileName);
-
+      // ✅ Save blob URL into DB (for same session use)
       await supabase
         .from("backend")
-        .update({ pdf_url: publicUrlData.publicUrl })
+        .update({ pdf_url: pdfUrl })
         .eq("phonenumber", invoice.phonenumber);
 
-      // ✅ Trigger webhook
-      await fetch("https://n8n-image2doc-u35379.vm.elestio.app/webhook/f06adee0-b5f2-40f4-a293-4ec1067a14b0", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event: "invoice_approved",
-          invoice_number: invoice.invoice_number,
-          phonenumber: invoice.phonenumber,
-          total: total,
-          pdf_url: publicUrlData.publicUrl,
-        }),
-      });
+      // ✅ Trigger webhook with blob URL
+      await fetch(
+        "https://n8n-image2doc-u35379.vm.elestio.app/webhook-test/f06adee0-b5f2-40f4-a293-4ec1067a14b0",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "invoice_approved",
+            invoice_number: invoice.invoice_number,
+            phonenumber: invoice.phonenumber,
+            total,
+            pdf_url: pdfUrl, // blob: URL
+          }),
+        }
+      );
 
-      alert("✅ Approved, PDF uploaded & webhook sent!");
+      alert("✅ Approved, PDF generated in frontend & webhook sent!");
       await fetchData();
     } catch (e) {
       console.error(e);
