@@ -165,13 +165,13 @@ export default function App() {
         status: "APPROVED",
       });
 
-      // ✅ Upload to Supabase Storage
-      const fileName = `invoice_${invoice.invoice_number || Date.now()}.pdf`;
+      // ✅ Upload to Supabase Storage (phone number in filename)
+      const fileName = `invoice_${invoice.phonenumber}.pdf`;
       const { error: uploadError } = await supabase.storage
         .from("invoices")
         .upload(fileName, pdfBytes, {
           contentType: "application/pdf",
-          upsert: true,
+          upsert: true, // overwrite if exists
         });
       if (uploadError) throw uploadError;
 
