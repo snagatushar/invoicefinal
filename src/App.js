@@ -96,7 +96,7 @@ export default function App() {
   }, []);
 
   /** ---- PDF ---- */
-  const generatePDFBlob = (invoiceLike) => {
+  const generatePDFBytes = (invoiceLike) => {
     const rows = normalizeRows(invoiceLike);
 
     const doc = new jsPDF();
@@ -137,7 +137,7 @@ export default function App() {
     const finalY = doc.lastAutoTable?.finalY ?? 120;
     doc.text("Authorized Signature: ____________________", 20, finalY + 20);
 
-    return doc.output("blob");
+    return doc.output("arraybuffer"); // Uint8Array buffer
   };
 
   /** ---- Approve ---- */
@@ -148,7 +148,7 @@ export default function App() {
       const amounts = rows.map((r) => num(r.quantity) * num(r.rate));
       const total = amounts.reduce((a, b) => a + b, 0);
 
-      // ✅ Update Supabase status only (no storage upload)
+      // ✅ Update Supabase status
       const { error: updateError } = await supabase
         .from("backend")
         .update({
@@ -159,20 +159,35 @@ export default function App() {
         .eq("phonenumber", invoice.phonenumber);
       if (updateError) throw updateError;
 
-      // ✅ Generate PDF blob and create URL
-      const pdfBlob = generatePDFBlob({
+      // ✅ Generate PDF
+      const pdfBytes = generatePDFBytes({
         ...invoice,
         status: "APPROVED",
       });
-      const pdfUrl = URL.createObjectURL(pdfBlob); // blob: URL (only works in browser)
 
-      // ✅ Save blob URL into DB (for same session use)
+      // ✅ Upload to Supabase Storage
+      const fileName = `invoice_${invoice.invoice_number || Date.now()}.pdf`;
+      const { error: uploadError } = await supabase.storage
+        .from("invoices")
+        .upload(fileName, pdfBytes, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+      if (uploadError) throw uploadError;
+
+      // ✅ Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from("invoices")
+        .getPublicUrl(fileName);
+      const pdfUrl = publicUrlData.publicUrl;
+
+      // ✅ Save permanent URL to DB
       await supabase
         .from("backend")
         .update({ pdf_url: pdfUrl })
         .eq("phonenumber", invoice.phonenumber);
 
-      // ✅ Trigger webhook with blob URL
+      // ✅ Send webhook
       await fetch(
         "https://n8n-image2doc-u35379.vm.elestio.app/webhook-test/f06adee0-b5f2-40f4-a293-4ec1067a14b0",
         {
@@ -183,12 +198,12 @@ export default function App() {
             invoice_number: invoice.invoice_number,
             phonenumber: invoice.phonenumber,
             total,
-            pdf_url: pdfUrl, // blob: URL
+            pdf_url: pdfUrl,
           }),
         }
       );
 
-      alert("✅ Approved, PDF generated in frontend & webhook sent!");
+      alert("✅ Approved, PDF uploaded & webhook sent!");
       await fetchData();
     } catch (e) {
       console.error(e);
