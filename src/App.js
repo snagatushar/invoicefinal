@@ -165,23 +165,23 @@ export default function App() {
         status: "APPROVED",
       });
 
-      // ✅ Upload to Supabase Storage (phone number in filename)
+      // ✅ Upload with phone number filename
       const fileName = `invoice_${invoice.phonenumber}.pdf`;
       const { error: uploadError } = await supabase.storage
         .from("invoices")
         .upload(fileName, pdfBytes, {
           contentType: "application/pdf",
-          upsert: true, // overwrite if exists
+          upsert: true,
         });
       if (uploadError) throw uploadError;
 
-      // ✅ Get public URL
+      // ✅ Public URL
       const { data: publicUrlData } = supabase.storage
         .from("invoices")
         .getPublicUrl(fileName);
       const pdfUrl = publicUrlData.publicUrl;
 
-      // ✅ Save permanent URL to DB
+      // ✅ Save permanent URL
       await supabase
         .from("backend")
         .update({ pdf_url: pdfUrl })
