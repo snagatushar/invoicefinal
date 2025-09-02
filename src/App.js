@@ -148,7 +148,7 @@ export default function App() {
       const amounts = rows.map((r) => num(r.quantity) * num(r.rate));
       const total = amounts.reduce((a, b) => a + b, 0);
 
-      // ✅ Update Supabase status only (no storage upload yet)
+      // ✅ Update Supabase status only
       const { error: updateError } = await supabase
         .from("backend")
         .update({
@@ -165,11 +165,14 @@ export default function App() {
         status: "APPROVED",
       });
 
-      // ✅ Upload to Supabase Storage
-      const fileName = `invoice_${invoice.invoice_number}_${Date.now()}.pdf`;
+      // ✅ Upload to Supabase Storage (using phonenumber as filename)
+      const fileName = `invoice_${invoice.phonenumber}.pdf`;
       const { error: uploadError } = await supabase.storage
-        .from("invoices") // bucket name
-        .upload(fileName, pdfBlob, { contentType: "application/pdf", upsert: true });
+        .from("invoices")
+        .upload(fileName, pdfBlob, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
       if (uploadError) throw uploadError;
 
       // ✅ Get public URL
@@ -195,7 +198,7 @@ export default function App() {
             invoice_number: invoice.invoice_number,
             phonenumber: invoice.phonenumber,
             total,
-            pdf_url: pdfUrl, // ✅ real public URL now
+            pdf_url: pdfUrl,
           }),
         }
       );
