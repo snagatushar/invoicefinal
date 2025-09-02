@@ -137,7 +137,7 @@ export default function App() {
     const finalY = doc.lastAutoTable?.finalY ?? 120;
     doc.text("Authorized Signature: ____________________", 20, finalY + 20);
 
-    // ✅ Fix: wrap ArrayBuffer in Uint8Array
+    // ✅ Return Uint8Array
     return new Uint8Array(doc.output("arraybuffer"));
   };
 
@@ -166,13 +166,16 @@ export default function App() {
         status: "APPROVED",
       });
 
+      // ✅ Convert to Blob before upload
+      const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
+
       console.log("Uploading:", invoice.phonenumber, "size:", pdfBytes.length);
 
       // ✅ Upload with phone number filename
       const fileName = `invoice_${invoice.phonenumber}.pdf`;
       const { error: uploadError } = await supabase.storage
         .from("invoices")
-        .upload(fileName, pdfBytes, {
+        .upload(fileName, pdfBlob, {
           contentType: "application/pdf",
           upsert: true,
         });
