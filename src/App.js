@@ -137,7 +137,8 @@ export default function App() {
     const finalY = doc.lastAutoTable?.finalY ?? 120;
     doc.text("Authorized Signature: ____________________", 20, finalY + 20);
 
-    return doc.output("arraybuffer"); // Uint8Array buffer
+    // ✅ Fix: wrap ArrayBuffer in Uint8Array
+    return new Uint8Array(doc.output("arraybuffer"));
   };
 
   /** ---- Approve ---- */
@@ -164,6 +165,8 @@ export default function App() {
         ...invoice,
         status: "APPROVED",
       });
+
+      console.log("Uploading:", invoice.phonenumber, "size:", pdfBytes.length);
 
       // ✅ Upload with phone number filename
       const fileName = `invoice_${invoice.phonenumber}.pdf`;
